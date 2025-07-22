@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webdis Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+        }
+        @-webkit-keyframes spin {
+            0% { -webkit-transform: rotate(0deg); }
+            100% { -webkit-transform: rotate(360deg); }
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="bg-white shadow-lg rounded-lg p-6 max-w-4xl mx-auto">
+
+            <header class="mb-6 border-b pb-4">
+                <h1 class="text-3xl font-bold text-gray-900">Webdis Client</h1>
+                <p class="text-gray-600 mt-1">Connect to a Webdis server to manage your Redis keys.</p>
+            </header>
+
+            <!-- Connection Section -->
+            <div class="mb-6">
+                <label for="webdis-url" class="block text-sm font-medium text-gray-700 mb-2">Webdis Server URL</label>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="text" id="webdis-url" class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., http://127.0.0.1:7379" value="http://127.0.0.1:7379">
+                    <button id="connect-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md transition duration-300 ease-in-out transform hover:scale-105 w-full sm:w-auto">
+                        Connect
+                    </button>
+                </div>
+                <div id="connection-status" class="mt-3 text-sm"></div>
+            </div>
+
+            <div id="main-content" class="hidden">
+                <!-- Set Key Section -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-lg border">
+                    <h2 class="text-xl font-semibold mb-3 text-gray-800">Set Key</h2>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <div class="flex-1">
+                            <label for="set-key" class="block text-sm font-medium text-gray-700 mb-1">Key</label>
+                            <input type="text" id="set-key" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Enter key">
+                        </div>
+                        <div class="flex-1">
+                            <label for="set-value" class="block text-sm font-medium text-gray-700 mb-1">Value</label>
+                            <input type="text" id="set-value" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Enter value">
+                        </div>
+                    </div>
+                    <button id="set-key-btn" class="mt-4 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">
+                        Set Key
+                    </button>
+                    <div id="set-key-status" class="mt-2 text-sm"></div>
+                </div>
+
+                <!-- List Keys Section -->
+                <div class="p-4 bg-gray-50 rounded-lg border">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold text-gray-800">All Keys</h2>
+                        <button id="list-keys-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md transition duration-300">
+                            Refresh Keys
+                        </button>
+                    </div>
+                    <div id="loader" class="hidden loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mb-4 mx-auto"></div>
+                    <div id="keys-list" class="space-y-2">
+                        <!-- Key-value pairs will be injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const webdisUrlInput = document.getElementById('webdis-url');
+        const connectBtn = document.getElementById('connect-btn');
+        const connectionStatus = document.getElementById('connection-status');
+        const mainContent = document.getElementById('main-content');
+        const setKeyInput = document.getElementById('set-key');
+        const setValueInput = document.getElementById('set-value');
+        const setKeyBtn = document.getElementById('set-key-btn');
+        const setKeyStatus = document.getElementById('set-key-status');
+        const listKeysBtn = document.getElementById('list-keys-btn');
+        const keysList = document.getElementById('keys-list');
+        const loader = document.getElementById('loader');
+
+        let baseUrl = '';
+
+        /**
+         * Fetches data from the Webdis server.
+         * @param {string} command - The Redis command to execute.
+         * @returns {Promise<any>} - The JSON response from the server.
+         */
+        async function fetchFromWebdis(command) {
+            try {
+                const response = await fetch(`${baseUrl}/${command}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Fetch error:', error);
+                throw error;
+            }
+        }
+
+        /**
+         * Connects to the Webdis server and checks the connection.
+         */
+        async function connect() {
+            baseUrl = webdisUrlInput.value.trim();
+            if (!baseUrl) {
+                connectionStatus.textContent = 'Please enter a valid URL.';
+                connectionStatus.className = 'text-red-500';
+                return;
+            }
+
+            // Sanitize URL to prevent protocol issues
+            if (!baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+                baseUrl = 'http://' + baseUrl;
+                webdisUrlInput.value = baseUrl;
+            }
+
+            connectionStatus.textContent = 'Connecting...';
+            connectionStatus.className = 'text-yellow-600';
+
+            try {
+                const data = await fetchFromWebdis('PING');
+                if (data.PING && data.PING[1] === 'PONG') {
+                    connectionStatus.textContent = 'Successfully connected to Webdis server!';
+                    connectionStatus.className = 'text-green-600';
+                    mainContent.classList.remove('hidden');
+                    listAllKeys();
+                } else {
+                    throw new Error('Invalid PING response');
+                }
+            } catch (error) {
+                connectionStatus.textContent = `Connection failed: ${error.message}. Make sure Webdis is running and accessible.`;
+                connectionStatus.className = 'text-red-500';
+                mainContent.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Fetches all keys and their values and displays them.
+         */
+        async function listAllKeys() {
+            loader.classList.remove('hidden');
+            keysList.innerHTML = '';
+            try {
+                const keysData = await fetchFromWebdis('KEYS/*');
+                const keys = keysData.KEYS;
+
+                if (keys.length === 0) {
+                    keysList.innerHTML = '<p class="text-gray-500">No keys found in the database.</p>';
+                    loader.classList.add('hidden');
+                    return;
+                }
+
+                const keyPromises = keys.map(async (key) => {
+                    const valueData = await fetchFromWebdis(`GET/${key}`);
+                    return { key, value: valueData.GET };
+                });
+
+                const keyValues = await Promise.all(keyPromises);
+
+                keyValues.forEach(({ key, value }) => {
+                    const keyElement = document.createElement('div');
+                    keyElement.className = 'p-3 bg-white border rounded-md flex justify-between items-center';
+                    keyElement.innerHTML = `
+                        <div>
+                            <span class="font-semibold text-gray-800">${key}</span>:
+                            <span class="text-gray-600">${value}</span>
+                        </div>
+                    `;
+                    keysList.appendChild(keyElement);
+                });
+
+            } catch (error) {
+                keysList.innerHTML = `<p class="text-red-500">Error fetching keys: ${error.message}</p>`;
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Sets a key-value pair in Redis.
+         */
+        async function setKey() {
+            const key = setKeyInput.value.trim();
+            const value = setValueInput.value.trim();
+
+            if (!key || !value) {
+                setKeyStatus.textContent = 'Please provide both a key and a value.';
+                setKeyStatus.className = 'text-red-500';
+                return;
+            }
+
+            setKeyStatus.textContent = 'Setting key...';
+            setKeyStatus.className = 'text-yellow-600';
+
+            try {
+                // Webdis requires the value to be URL-encoded for the SET command
+                const encodedValue = encodeURIComponent(value);
+                const data = await fetchFromWebdis(`SET/${key}/${encodedValue}`);
+                if (data.SET && data.SET[0] === true && data.SET[1] === 'OK') {
+                    setKeyStatus.textContent = `Successfully set key "${key}".`;
+                    setKeyStatus.className = 'text-green-600';
+                    setKeyInput.value = '';
+                    setValueInput.value = '';
+                    listAllKeys(); // Refresh the list
+                } else {
+                     throw new Error('Failed to set key. Invalid response from server.');
+                }
+            } catch (error) {
+                setKeyStatus.textContent = `Error setting key: ${error.message}`;
+                setKeyStatus.className = 'text-red-500';
+            }
+        }
+
+        // Event Listeners
+        connectBtn.addEventListener('click', connect);
+        listKeysBtn.addEventListener('click', listAllKeys);
+        setKeyBtn.addEventListener('click', setKey);
+        
+        // Allow pressing Enter to connect
+        webdisUrlInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                connect();
+            }
+        });
+    </script>
+
+</body>
+</html>
